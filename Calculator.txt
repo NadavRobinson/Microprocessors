@@ -1,0 +1,637 @@
+	LIST 	P=PIC16F877
+		include	P16f877.inc
+ __CONFIG _CP_OFF & _WDT_OFF & _BODEN_OFF & _PWRTE_OFF & _HS_OSC & _WRT_ENABLE_ON & _LVP_OFF & _DEBUG_OFF & _CPD_OFF
+		COUNT EQU 0x35
+		TEMP EQU 0x36
+		TEMP1 EQU 0x37
+		FLAG EQU 0x38
+		FLAG_NEGATIVE EQU 0x39
+		org		0x00
+reset	goto	start
+
+		org	0x10
+start	bcf		STATUS, RP0
+		bcf		STATUS, RP1		;Bank 0
+		clrf	PORTD
+		clrf	PORTE
+		clrf	TEMP
+		clrf	TEMP1
+		clrf 	COUNT
+		clrf	0x60
+		clrf	0x30
+		clrf	0x40
+		clrf	0x50
+		clrf	FLAG
+		clrf	FLAG_NEGATIVE
+		BSF		STATUS,C
+
+		bsf		STATUS, RP0		;Bank 1
+		movlw	0x06
+		movwf	ADCON1
+        movlw   0x0F		;4 Low bits of PORTB are input,4 High bits output
+        movwf   TRISB
+        bcf     OPTION_REG,0x07 ; RBPU is ON -->Pull UP on PORTB is enabled
+
+		clrf	TRISE		;porte output 
+		clrf	TRISD		;portd output
+
+		bcf		STATUS, RP0		;Bank 0
+
+		call	init
+;----------------------------*------------------------------
+		movlw	0x80			 ;PLACE for the data on the LCD
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		movlw	'A'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		movlw	':'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+			
+		movlw	0x04
+		movwf	TEMP
+	loop_A:
+		call	wkb
+		movwf	TEMP1
+		addlw	0x30
+		movwf	0x20
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel	
+		movf	TEMP,w
+		movwf	COUNT
+		CALL	shiftLeftA
+
+		decfsz	TEMP,f
+		goto	loop_A
+;-------------------------------------------
+		movlw	0x01			 ;Clear display
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		movlw	0x80			 ;PLACE for the data on the LCD
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		movlw	'B'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		movlw	':'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+
+		movlw	0x04
+		movwf	TEMP				
+	loop_B:
+		call	wkb
+		movwf	TEMP1
+		addlw	0x30
+		movwf	0x20
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		movf	TEMP,w
+		movwf	COUNT
+		CALL	shiftLeftB
+		decfsz	TEMP,f
+		goto	loop_B
+;--------------------------------
+		movlw	0x01			 ;Clear display
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		movlw	0x80			 ;PLACE for the data on the LCD
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		movlw	'C'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		movlw	':'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+
+		movlw	0x03
+		movwf	TEMP
+	loop_C:
+		call	wkb
+		movwf	TEMP1
+		addlw	0x30
+		movwf	0x20
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		movf	TEMP,w
+		movwf	COUNT
+		CALL	shiftLeftC
+		decfsz	TEMP,f
+		goto	loop_C
+
+		movlw	0x01			 ;Clear display
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+		
+	movlw	0x01			;Check sub opcode	
+	xorwf	0x50,w
+	BSF		STATUS,C
+	BTFSC	STATUS,Z
+	call	subtraction
+	call	check_negative
+;--------------------
+	movlw	0x02			;Check multiply opcode	
+	xorwf	0x50,w
+	BTFSC	STATUS,Z
+	call	multiplication
+;--------------------
+	movlw	0x03			;Check division opcode	
+	xorwf	0x50,w
+	BTFSC	STATUS,Z
+	call	division
+;--------------------
+	movlw	0x04			;Check power opcode	
+	xorwf	0x50,w
+	BTFSC	STATUS,Z
+	call	power
+;--------------------
+	movlw	0x05			;Check count_1 opcode	
+	xorwf	0x50,w
+	BTFSC	STATUS,Z
+	call	count_1
+;--------------------
+	movlw	0x06			;Check count_0 opcode	
+	xorwf	0x50,w
+	BTFSC	STATUS,Z
+	call	count_0
+;--------------------	
+	BTFSC	FLAG_NEGATIVE,0
+	call	comp_2
+	
+	BTFSS	FLAG,0
+	goto 	display_error
+ 	call	display_result
+	goto 	wait
+;-----------------------------------------------------------------------
+wkb:    bcf             PORTB,0x4     ;Line 0 of Matrix is enabled
+        bsf             PORTB,0x5
+        bsf             PORTB,0x6
+        bsf             PORTB,0x7
+;-----------------------------------------------------------------------
+        btfss           PORTB,0x0     ;Scan for 1,2,3,A
+        goto            kb01
+        btfss           PORTB,0x1
+        goto            kb02
+        btfss           PORTB,0x2
+        goto            kb03
+        btfss           PORTB,0x3
+        goto            kb0a
+;-----------------------------------------------------------------------
+        bsf             PORTB,0x4	;Line 1 of Matrix is enabled
+        bcf             PORTB,0x5
+;-----------------------------------------------------------------------
+        btfss           PORTB,0x0	;Scan for 4,5,6,B
+        goto            kb04
+        btfss           PORTB,0x1
+        goto            kb05
+        btfss           PORTB,0x2
+        goto            kb06
+        btfss           PORTB,0x3
+        goto            kb0b
+;-----------------------------------------------------------------------	
+        bsf             PORTB,0x5	;Line 2 of Matrix is enabled
+        bcf             PORTB,0x6
+;-----------------------------------------------------------------------
+        btfss           PORTB,0x0	;Scan for 7,8,9,C
+        goto            kb07
+        btfss           PORTB,0x1
+        goto            kb08
+        btfss           PORTB,0x2
+        goto            kb09
+        btfss           PORTB,0x3
+        goto            kb0c
+;-----------------------------------------------------------------------
+        bsf             PORTB,0x6	;Line 3 of Matrix is enabled
+        bcf             PORTB,0x7
+;----------------------------------------------------------------------
+        btfss           PORTB,0x0	;Scan for *,0,#,D
+        goto            kb0e ;*
+        btfss           PORTB,0x1
+        goto            kb00
+        btfss           PORTB,0x2
+        goto            kb0f ;#
+        btfss           PORTB,0x3
+        goto            kb0d
+;----------------------------------------------------------------------
+
+
+        goto            wkb
+		
+
+kb00:   movlw           0x00
+        goto            disp	
+kb01:   movlw           0x01
+        goto            disp	
+kb02:   movlw           0x02
+        goto            disp	
+kb03:   movlw           0x03
+        goto            disp	
+	
+kb04:   movlw           0x04
+        goto            disp	
+kb05:   movlw           0x05
+        goto            disp	
+kb06:   movlw           0x06
+        goto            disp	
+kb07:   movlw           0x07
+        goto            disp	
+kb08:   movlw           0x08
+        goto            disp	
+kb09:   movlw           0x09
+        goto            disp	
+kb0a:   movlw           0x0a
+        goto            disp	
+kb0b:   movlw           0x0b
+        goto            disp	
+kb0c:   movlw           0x0c
+        goto            disp	
+kb0d:   movlw           0x0d
+        goto            disp	
+kb0e:   movlw           0x0e
+        goto            disp	
+kb0f:   movlw           0x0f
+        goto            disp	
+
+
+disp:   return
+
+;----------------------------------------------------------
+;
+;subroutine to initialize LCD
+;
+init	movlw	0x30
+		movwf	0x20
+		call 	lcdc
+		call	del_41
+
+		movlw	0x30
+		movwf	0x20
+		call 	lcdc
+		call	del_01
+
+		movlw	0x30
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		movlw	0x01		; display clear
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		movlw	0x06		; ID=1,S=0 increment,no  shift 000001 ID S
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		movlw	0x0c		; D=1,C=B=0 set display ,no cursor, no blinking
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		movlw	0x38		; dl=1 ( 8 bits interface,n=12 lines,f=05x8 dots)
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+		return
+
+;
+;subroutine to write command to LCD
+;
+
+lcdc	movlw	0x00		; E=0,RS=0 
+		movwf	PORTE
+		movf	0x20,w
+		movwf	PORTD
+		movlw	0x01		; E=1,RS=0
+		movwf	PORTE
+        call	sdel
+		movlw	0x00		; E=0,RS=0
+		movwf	PORTE
+		return
+
+;
+;subroutine to write data to LCD
+;
+
+lcdd	movlw		0x02		; E=0, RS=1
+		movwf		PORTE
+		movf		0x20,w
+		movwf		PORTD
+        movlw		0x03		; E=1, rs=1  
+		movwf		PORTE
+		call		sdel
+		movlw		0x02		; E=0, rs=1  
+		movwf		PORTE
+		return
+
+;----------------------------------------------------------
+
+del_41	movlw		0xcd
+		movwf		0x23
+lulaa6	movlw		0x20
+		movwf		0x22
+lulaa7	decfsz		0x22,1
+		goto		lulaa7
+		decfsz		0x23,1
+		goto 		lulaa6 
+		return
+
+
+del_01	movlw		0x20
+		movwf		0x22
+lulaa8	decfsz		0x22,1
+		goto		lulaa8
+		return
+
+
+sdel	movlw		0x19		; movlw = 1 cycle
+		movwf		0x23		; movwf	= 1 cycle
+lulaa2	movlw		0xfa
+		movwf		0x22
+lulaa1	decfsz		0x22,1		; decfsz= 12 cycle
+		goto		lulaa1		; goto	= 2 cycles
+		decfsz		0x23,1
+		goto 		lulaa2 
+		return
+
+
+mdel	movlw		0x0a
+		movwf		0x24
+lulaa5	movlw		0x19
+		movwf		0x23
+lulaa4	movlw		0xfa
+		movwf		0x22
+lulaa3	decfsz		0x22,1
+		goto		lulaa3
+		decfsz		0x23,1
+		goto 		lulaa4 
+		decfsz		0x24,1
+		goto		lulaa5
+		return
+
+subtraction:
+		BSF		FLAG,0
+		movf	0x40, w
+		subwf 	0x30, w
+		movwf	0x60
+		return
+check_negative:
+		BTFSS	STATUS,C
+		BSF		FLAG_NEGATIVE,0
+		return
+comp_2:
+		COMF	0x60,f
+		incf	0x60,f
+		return
+multiplication:
+		BSF		FLAG,0
+		movlw	0x00		;Edge case B = 0 
+		xorwf	0x40
+		BTFSS	STATUS,Z
+		goto	continue		
+		movlw	0x00
+		movwf	0x60
+		return	
+	continue:
+		clrf	TEMP
+	loop1:
+		movf	0x30, w
+		addwf	TEMP, f
+		DECFSZ 	0x40,f
+		goto loop1
+		movf	TEMP,w
+		movwf	0x60
+	return
+division:
+		BSF		FLAG,0
+		movlw	0x00		;Edge case b = 0
+		xorwf	0x40,w
+		BTFSC	STATUS,Z
+		goto	display_error
+
+		clrf	COUNT
+	loop2:
+		BSF 	STATUS, C
+		call	subtraction	
+		btfsc	STATUS, C
+		goto	t
+		goto 	exit1
+t:		incf 	COUNT
+		movf	0x60,w
+		movwf	0x30
+		goto 	loop2
+exit1:
+		movf	COUNT, w
+		movwf	0x60
+	return
+power:
+		BSF		FLAG,0
+		movlw	0x00		;Edge case B = 0 
+		xorwf	0x40
+		BTFSS	STATUS,Z
+		goto	l		
+		movlw	0x01
+		movwf	0x60
+		return					
+	l:	
+		movf	0x40, w
+		movwf 	TEMP1
+		movf	0x30,w
+		movwf	0x40
+	check:
+		decfsz	TEMP1,f
+		goto	loop3
+		goto	exit4
+		
+	loop3:
+		call	multiplication	
+		movf	0x60,w
+		movwf 	0x40	
+		goto	check
+	exit4:
+		movf	0x40,w
+		movwf	0x60
+	return
+
+count_1:
+	BSF		FLAG,0
+	CLRF 	COUNT
+	movlw	0x04
+	movwf	TEMP
+loop5:
+	BTFSC	0x30,0
+	INCF	COUNT,f
+	RRF		0x30,f
+	decfsz	TEMP,f
+	goto	loop5
+	movf	COUNT,w
+	movwf	0x60
+return
+
+count_0:
+	BSF		FLAG,0
+	CLRF 	COUNT
+	movlw	0x04
+	movwf	TEMP
+loop6:
+	BTFSS	0x30,0
+	INCF	COUNT,f
+	RRF		0x30,f
+	decfsz	TEMP,f
+	goto	loop6
+	movf	COUNT,w
+	movwf	0x60
+return
+
+shiftLeftA:
+	decfsz	COUNT,f
+	goto	loop_shiftA
+	goto	label1
+	loop_shiftA:
+		RLF		TEMP1,f
+		decfsz	COUNT,f
+		goto 	loop_shiftA
+	label1: 
+	movf	TEMP1,w
+	IORWF	0x30
+	return
+
+shiftLeftB:
+	decfsz	COUNT,f
+	goto	loop_shiftB
+	goto	label2
+	loop_shiftB:
+		RLF		TEMP1,f
+		decfsz	COUNT,f
+		goto 	loop_shiftB
+	label2: 
+	movf	TEMP1,w
+	IORWF	0x40
+	return
+
+shiftLeftC:
+	decfsz	COUNT,f
+	goto	loop_shiftC
+	goto	label3
+	loop_shiftC:
+		RLF		TEMP1,f
+		decfsz	COUNT,f
+		goto 	loop_shiftC
+	label3: 
+	movf	TEMP1,w
+	IORWF	0x50
+	return
+display_result:
+		movlw	0xC0			 ;PLACE for the data on the LCD
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		BTFSS	FLAG_NEGATIVE,0
+		goto	c
+		movlw	'-'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		
+	c:	movlw	0x01
+		movwf	TEMP
+		
+		movlw	0x04
+		movwf	COUNT
+		swapf	0x60,f
+	shiftLoop:
+		movlw	0x30
+		movwf	TEMP1
+		RLF		0x60,f
+		BTFSC	STATUS,C
+		incf	TEMP1,f
+		movf	TEMP1,w
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		decfsz	COUNT,f
+		goto	shiftLoop
+	return	
+
+display_error:
+		movlw	0xC0			 ;PLACE for the data on the LCD
+		movwf	0x20
+		call 	lcdc
+		call	mdel
+
+		movlw	'E'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		movlw	'R'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		movlw	'R'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		movlw	'O'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+		movlw	'R'
+		movwf	0x20			
+		call 	lcdd
+		call	mdel
+		call 	mdel
+		call 	mdel
+wait:	goto wait
+		end
+
